@@ -28,11 +28,11 @@ def format_duration(seconds: float) -> str:
     minutes, seconds = divmod(seconds, 60)
 
     if hours > 0:
-        return f"{hours}h {minutes}m"
+        return f"{hours}時間 {minutes}分"
     elif minutes > 0:
-        return f"{minutes}m {seconds}s"
+        return f"{minutes}分 {seconds}秒"
     else:
-        return f"{seconds}s"
+        return f"{seconds}秒"
 
 
 def load_prompts(specification: DatasetSpecification) -> list[str]:
@@ -67,7 +67,7 @@ def get_trial_parameters(trial: Trial) -> dict[str, str]:
 
     direction_index = trial.user_attrs["direction_index"]
     params["direction_index"] = (
-        "per layer" if (direction_index is None) else f"{direction_index:.2f}"
+        "レイヤーごと" if (direction_index is None) else f"{direction_index:.2f}"
     )
 
     for component, parameters in trial.user_attrs["parameters"].items():
