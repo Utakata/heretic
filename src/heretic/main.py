@@ -43,7 +43,7 @@ from .utils import (
 
 
 def run():
-    # Modified "Pagga" font from https://budavariam.github.io/asciiart-text/
+    # https://budavariam.github.io/asciiart-text/ の「Pagga」フォントを修正
     print(f"[cyan]█░█░█▀▀░█▀▄░█▀▀░▀█▀░█░█▀▀[/]  v{version('heretic-llm')}")
     print("[cyan]█▀█░█▀▀░█▀▄░█▀▀░░█░░█░█░░[/]")
     print(
@@ -52,32 +52,32 @@ def run():
     print()
 
     if (
-        # An odd number of arguments have been passed (argv[0] is the program name),
-        # so that after accounting for "--param VALUE" pairs, there is one left over.
+        # 奇数の引数が渡された場合（argv[0]はプログラム名）、
+        # 「--param VALUE」ペアを考慮すると1つ余る。
         len(sys.argv) % 2 == 0
-        # The leftover argument is a parameter value rather than a flag (such as "--help").
+        # 残りの引数がフラグ（「--help」など）ではなくパラメータ値である場合。
         and not sys.argv[-1].startswith("-")
     ):
-        # Assume the last argument is the model.
+        # 最後の引数をモデルと仮定する。
         sys.argv.insert(-1, "--model")
 
     try:
         settings = Settings()
     except ValidationError as error:
-        print(f"[red]Configuration contains [bold]{error.error_count()}[/] errors:[/]")
+        print(f"設定ファイルに [bold]{error.error_count()}個[/] のエラーがあります:")
 
         for error in error.errors():
             print(f"[bold]{error['loc'][0]}[/]: [yellow]{error['msg']}[/]")
 
         print()
         print(
-            "Run [bold]heretic --help[/] or see [bold]config.default.toml[/] for details about configuration parameters."
+            "[bold]heretic --help[/] を実行するか、[bold]config.default.toml[/] を参照して設定パラメータの詳細を確認してください。"
         )
         return
 
     # Adapted from https://github.com/huggingface/accelerate/blob/main/src/accelerate/commands/env.py
     if torch.cuda.is_available():
-        print(f"GPU type: [bold]{torch.cuda.get_device_name()}[/]")
+        print(f"GPUタイプ: [bold]{torch.cuda.get_device_name()}[/]")
     elif is_xpu_available():
         print(f"XPU type: [bold]{torch.xpu.get_device_name()}[/]")
     elif is_mlu_available():
@@ -90,57 +90,56 @@ def run():
         print(f"CANN version: [bold]{torch.version.cann}[/]")
     else:
         print(
-            "[bold yellow]No GPU or other accelerator detected. Operations will be slow.[/]"
+            "[bold yellow]GPUやその他のアクセラレータが検出されませんでした。処理速度が遅くなります。[/]"
         )
 
-    # We don't need gradients as we only do inference.
+    # 推論のみを行うため、勾配は必要ありません。
     torch.set_grad_enabled(False)
 
-    # While determining the optimal batch size, we will try many different batch sizes,
-    # resulting in many computation graphs being compiled. Raising the limit (default = 8)
-    # avoids errors from TorchDynamo assuming that something is wrong because we
-    # recompile too often.
+    # 最適なバッチサイズを決定する際に、多くの異なるバッチサイズを試行するため、
+    # 多くの計算グラフがコンパイルされます。制限を引き上げる（デフォルト= 8）と、
+    # TorchDynamoが再コンパイルが多すぎるために何かがおかしいと仮定するエラーを回避できます。
     torch._dynamo.config.cache_size_limit = 64
 
-    # Silence warning spam from Transformers.
-    # In my entire career I've never seen a useful warning from that library.
+    # Transformersからの警告スパムを抑制します。
+    # 私のキャリア全体で、そのライブラリから有用な警告を見たことは一度もありません。
     transformers.logging.set_verbosity_error()
 
-    # We do our own trial logging, so we don't need the INFO messages
-    # about parameters and results.
+    # 独自の試行ロギングを行うため、パラメータと結果に関する
+    # INFOメッセージは必要ありません。
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    # Silence the warning about multivariate TPE being experimental.
+    # 多変量TPEが実験的であるという警告を抑制します。
     warnings.filterwarnings("ignore", category=ExperimentalWarning)
 
     model = Model(settings)
 
     print()
-    print(f"Loading good prompts from [bold]{settings.good_prompts.dataset}[/]...")
+    print(f"（評価用）良性プロンプトを [bold]{settings.good_prompts.dataset}[/] から読み込み中...")
     good_prompts = load_prompts(settings.good_prompts)
-    print(f"* [bold]{len(good_prompts)}[/] prompts loaded")
+    print(f"* [bold]{len(good_prompts)}個[/] のプロンプトを読み込みました")
 
     print()
-    print(f"Loading bad prompts from [bold]{settings.bad_prompts.dataset}[/]...")
+    print(f"（評価用）悪性プロンプトを [bold]{settings.bad_prompts.dataset}[/] から読み込み中...")
     bad_prompts = load_prompts(settings.bad_prompts)
-    print(f"* [bold]{len(bad_prompts)}[/] prompts loaded")
+    print(f"* [bold]{len(bad_prompts)}個[/] のプロンプトを読み込みました")
 
     if settings.batch_size == 0:
         print()
-        print("Determining optimal batch size...")
+        print("最適なバッチサイズを決定中...")
 
         batch_size = 1
         best_batch_size = -1
         best_performance = -1
 
         while batch_size <= settings.max_batch_size:
-            print(f"* Trying batch size [bold]{batch_size}[/]... ", end="")
+            print(f"* バッチサイズ [bold]{batch_size}[/] を試行中... ", end="")
 
             prompts = good_prompts * math.ceil(batch_size / len(good_prompts))
             prompts = prompts[:batch_size]
 
             try:
-                # Warmup run to build the computation graph so that part isn't benchmarked.
+                # ウォームアップ実行して計算グラフを構築し、その部分がベンチマークされないようにします。
                 model.get_responses(prompts)
 
                 start_time = time.perf_counter()
@@ -148,11 +147,11 @@ def run():
                 end_time = time.perf_counter()
             except Exception as error:
                 if batch_size == 1:
-                    # Even a batch size of 1 already fails.
-                    # We cannot recover from this.
+                    # バッチサイズ1でもすでに失敗します。
+                    # これから回復することはできません。
                     raise
 
-                print(f"[red]Failed[/] ({error})")
+                print(f"[red]失敗[/] ({error})")
                 break
 
             response_lengths = [
@@ -160,7 +159,7 @@ def run():
             ]
             performance = sum(response_lengths) / (end_time - start_time)
 
-            print(f"[green]Ok[/] ([bold]{performance:.0f}[/] tokens/s)")
+            print(f"[green]成功[/] ([bold]{performance:.0f}[/] トークン/秒)")
 
             if performance > best_performance:
                 best_batch_size = batch_size
@@ -169,24 +168,24 @@ def run():
             batch_size *= 2
 
         settings.batch_size = best_batch_size
-        print(f"* Chosen batch size: [bold]{settings.batch_size}[/]")
+        print(f"* 選択されたバッチサイズ: [bold]{settings.batch_size}[/]")
 
     evaluator = Evaluator(settings, model)
 
     if settings.evaluate_model is not None:
         print()
-        print(f"Loading model [bold]{settings.evaluate_model}[/]...")
+        print(f"モデル [bold]{settings.evaluate_model}[/] を読み込み中...")
         settings.model = settings.evaluate_model
         model.reload_model()
-        print("* Evaluating...")
+        print("* 評価を実行中...")
         evaluator.get_score()
         return
 
     print()
-    print("Calculating per-layer refusal directions...")
-    print("* Obtaining residuals for good prompts...")
+    print("レイヤーごとの拒否方向を計算中...")
+    print("* 良性プロンプトの残差を取得中...")
     good_residuals = model.get_residuals_batched(good_prompts)
-    print("* Obtaining residuals for bad prompts...")
+    print("* 悪性プロンプトの残差を取得中...")
     bad_residuals = model.get_residuals_batched(bad_prompts)
     refusal_directions = F.normalize(
         bad_residuals.mean(dim=0) - good_residuals.mean(dim=0),
@@ -210,13 +209,11 @@ def run():
             ],
         )
 
-        # Discrimination between "harmful" and "harmless" inputs is usually strongest
-        # in layers slightly past the midpoint of the layer stack. See the original
-        # abliteration paper (https://arxiv.org/abs/2406.11717) for a deeper analysis.
+        # 「有害な」入力と「無害な」入力の識別は、通常、レイヤースタックの中間点をわずかに超えたレイヤーで最も強力です。
+        # 詳細な分析については、元のabliterationの論文（https://arxiv.org/abs/2406.11717）を参照してください。
         #
-        # Note that we always sample this parameter even though we only need it for
-        # the "global" direction scope. The reason is that multivariate TPE doesn't
-        # work with conditional or variable-range parameters.
+        # このパラメータは「グローバル」な方向スコープにのみ必要ですが、常にサンプリングすることに注意してください。
+        # その理由は、多変量TPEが条件付きまたは可変範囲のパラメータで機能しないためです。
         direction_index = trial.suggest_float(
             "direction_index",
             0.4 * (len(model.get_layers()) - 1),
@@ -229,9 +226,8 @@ def run():
         parameters = {}
 
         for component in model.get_abliterable_components():
-            # The parameter ranges are based on experiments with various models
-            # and much wider ranges. They are not set in stone and might have to be
-            # adjusted for future models.
+            # パラメータ範囲は、さまざまなモデルとより広い範囲での実験に基づいています。
+            # それらは固定されたものではなく、将来のモデルに合わせて調整する必要があるかもしれません。
             max_weight = trial.suggest_float(
                 f"{component}.max_weight",
                 0.8,
@@ -242,9 +238,9 @@ def run():
                 0.6 * (len(model.get_layers()) - 1),
                 len(model.get_layers()) - 1,
             )
-            # For sampling purposes, min_weight is expressed as a fraction of max_weight,
-            # again because multivariate TPE doesn't support variable-range parameters.
-            # The value is transformed into the actual min_weight value below.
+            # サンプリングの目的で、min_weightはmax_weightの分数として表現されます。
+            # これも、多変量TPEが可変範囲パラメータをサポートしていないためです。
+            # 値は、以下で実際のmin_weight値に変換されます。
             min_weight = trial.suggest_float(
                 f"{component}.min_weight",
                 0.0,
@@ -268,16 +264,16 @@ def run():
 
         print()
         print(
-            f"Running trial [bold]{trial_index}[/] of [bold]{settings.n_trials}[/]..."
+            f"トライアル [bold]{trial_index}[/] / [bold]{settings.n_trials}[/] を実行中..."
         )
-        print("* Parameters:")
+        print("* パラメータ:")
         for name, value in get_trial_parameters(trial).items():
             print(f"  * {name} = [bold]{value}[/]")
-        print("* Reloading model...")
+        print("* モデルを再読み込み中...")
         model.reload_model()
-        print("* Abliterating...")
+        print("* Abliteration（除去）を実行中...")
         model.abliterate(refusal_directions, direction_index, parameters)
-        print("* Evaluating...")
+        print("* 評価中...")
         score, kl_divergence, refusals = evaluator.get_score()
 
         elapsed_time = time.perf_counter() - start_time
@@ -285,10 +281,10 @@ def run():
             settings.n_trials - trial_index
         )
         print()
-        print(f"[grey50]Elapsed time: [bold]{format_duration(elapsed_time)}[/][/]")
+        print(f"[grey50]経過時間: [bold]{format_duration(elapsed_time)}[/][/]")
         if trial_index < settings.n_trials:
             print(
-                f"[grey50]Estimated remaining time: [bold]{format_duration(remaining_time)}[/][/]"
+                f"[grey50]推定残り時間: [bold]{format_duration(remaining_time)}[/][/]"
             )
 
         trial.set_user_attr("kl_divergence", kl_divergence)
@@ -315,9 +311,9 @@ def run():
     choices = [
         Choice(
             title=(
-                f"[Trial {trial.user_attrs['index']:>3}] "
-                f"Refusals: {trial.user_attrs['refusals']:>2}/{len(evaluator.bad_prompts)}, "
-                f"KL divergence: {trial.user_attrs['kl_divergence']:.2f}"
+                f"[トライアル {trial.user_attrs['index']:>3}] "
+                f"拒否回数: {trial.user_attrs['refusals']:>2}/{len(evaluator.bad_prompts)}, "
+                f"KLダイバージェンス: {trial.user_attrs['kl_divergence']:.2f}"
             ),
             value=trial,
         )
@@ -326,27 +322,25 @@ def run():
 
     choices.append(
         Choice(
-            title="None (exit program)",
+            title="なし（プログラムを終了する）",
             value="",
         )
     )
 
     print()
-    print("[bold green]Optimization finished![/]")
+    print("[bold green]最適化が完了しました！[/]")
     print()
     print(
         (
-            "The following trials resulted in Pareto optimal combinations of refusals and KL divergence. "
-            "After selecting a trial, you will be able to save the model, upload it to Hugging Face, "
-            "or chat with it to test how well it works. You can return to this menu later to select a different trial. "
-            "[yellow]Note that KL divergence values above 1 usually indicate significant damage to the original model's capabilities.[/]"
+            "以下のトライアルは、拒否回数とKLダイバージェンスのパレート最適解です。... "
+            "[yellow]注意：KLダイバージェンスが1.0を超えると、通常、オリジナルモデルの能力に重大な損傷があることを示します。[/]"
         )
     )
 
     while True:
         print()
         trial = questionary.select(
-            "Which trial do you want to use?",
+            "どのトライアルを使用しますか？",
             choices=choices,
             style=Style([("highlighted", "reverse")]),
         ).ask()
@@ -355,10 +349,10 @@ def run():
             break
 
         print()
-        print(f"Restoring model from trial [bold]{trial.user_attrs['index']}[/]...")
-        print("* Reloading model...")
+        print(f"トライアル [bold]{trial.user_attrs['index']}[/] のモデルを復元中...")
+        print("* モデルを再読み込み中...")
         model.reload_model()
-        print("* Abliterating...")
+        print("* Abliteration（除去）を実行中...")
         model.abliterate(
             refusal_directions,
             trial.user_attrs["direction_index"],
@@ -368,67 +362,67 @@ def run():
         while True:
             print()
             action = questionary.select(
-                "What do you want to do with the decensored model?",
+                "無害化解除したモデルで何をしますか？",
                 choices=[
-                    "Save the model to a local folder",
-                    "Upload the model to Hugging Face",
-                    "Chat with the model",
-                    "Nothing (return to trial selection menu)",
+                    "モデルをローカルフォルダに保存する",
+                    "モデルをHugging Faceにアップロードする",
+                    "モデルとチャットする",
+                    "何もしない（トライアル選択メニューに戻る）",
                 ],
                 style=Style([("highlighted", "reverse")]),
             ).ask()
 
-            if action is None or action == "Nothing (return to trial selection menu)":
+            if action is None or action == "何もしない（トライアル選択メニューに戻る）":
                 break
 
-            # All actions are wrapped in a try/except block so that if an error occurs,
-            # another action can be tried, instead of the program crashing and losing
-            # the optimized model.
+            # すべてのアクションはtry/exceptブロックでラップされているため、エラーが発生した場合でも、
+            # プログラムがクラッシュして最適化されたモデルを失う代わりに、
+            # 別のアクションを試すことができます。
             try:
                 match action:
-                    case "Save the model to a local folder":
-                        save_directory = questionary.path("Path to the folder:").ask()
+                    case "モデルをローカルフォルダに保存する":
+                        save_directory = questionary.path("フォルダへのパス:").ask()
                         if not save_directory:
                             continue
 
-                        print("Saving model...")
+                        print("モデルを保存中...")
                         model.model.save_pretrained(save_directory)
                         model.tokenizer.save_pretrained(save_directory)
-                        print(f"Model saved to [bold]{save_directory}[/].")
+                        print(f"モデルを [bold]{save_directory}[/] に保存しました。")
 
-                    case "Upload the model to Hugging Face":
-                        # We don't use huggingface_hub.login() because that stores the token on disk,
-                        # and since this program will often be run on rented or shared GPU servers,
-                        # it's better to not persist credentials.
+                    case "モデルをHugging Faceにアップロードする":
+                        # huggingface_hub.login()はトークンをディスクに保存するため使用しません。
+                        # このプログラムはレンタルまたは共有GPUサーバーで実行されることが多いため、
+                        # 資格情報を永続化しない方がよいでしょう。
                         token = huggingface_hub.get_token()
                         if not token:
                             token = questionary.password(
-                                "Hugging Face access token:"
+                                "Hugging Face アクセストークン:"
                             ).ask()
                         if not token:
                             continue
 
                         user = huggingface_hub.whoami(token)
                         print(
-                            f"Logged in as [bold]{user['fullname']} ({user['email']})[/]"
+                            f"[bold]{user['fullname']} ({user['email']})[/] としてログインしました"
                         )
 
                         repo_id = questionary.text(
-                            "Name of repository:",
+                            "リポジトリ名:",
                             default=f"{user['name']}/{Path(settings.model).name}-heretic",
                         ).ask()
 
                         visibility = questionary.select(
-                            "Should the repository be public or private?",
+                            "リポジトリを公開（Public）または非公開（Private）にしますか？",
                             choices=[
-                                "Public",
-                                "Private",
+                                "公開",
+                                "非公開",
                             ],
                             style=Style([("highlighted", "reverse")]),
                         ).ask()
-                        private = visibility == "Private"
+                        private = visibility == "非公開"
 
-                        print("Uploading model...")
+                        print("モデルをアップロード中...")
 
                         model.model.push_to_hub(
                             repo_id,
@@ -441,9 +435,9 @@ def run():
                             token=token,
                         )
 
-                        # If the model path doesn't exist locally, it can be assumed
-                        # to be a model hosted on the Hugging Face Hub, in which case
-                        # we can retrieve the model card.
+                        # モデルパスがローカルに存在しない場合は、
+                        # Hugging Face Hubでホストされているモデルであると見なすことができ、
+                        # その場合はモデルカードを取得できます。
                         if not Path(settings.model).exists():
                             card = ModelCard.load(settings.model)
                             if card.data is None:
@@ -465,12 +459,12 @@ def run():
                             )
                             card.push_to_hub(repo_id, token=token)
 
-                        print(f"Model uploaded to [bold]{repo_id}[/].")
+                        print(f"モデルを [bold]{repo_id}[/] にアップロードしました。")
 
-                    case "Chat with the model":
+                    case "モデルとチャットする":
                         print()
                         print(
-                            "[cyan]Press Ctrl+C at any time to return to the menu.[/]"
+                            "[cyan]Ctrl+C を押すといつでもメニューに戻れます。[/]"
                         )
 
                         chat = [
@@ -480,14 +474,14 @@ def run():
                         while True:
                             try:
                                 message = questionary.text(
-                                    "User:",
+                                    "ユーザー:",
                                     qmark=">",
                                 ).unsafe_ask()
                                 if not message:
                                     break
                                 chat.append({"role": "user", "content": message})
 
-                                print("[bold]Assistant:[/] ", end="")
+                                print("[bold]アシスタント:[/] ", end="")
                                 response = model.stream_chat_response(chat)
                                 chat.append({"role": "assistant", "content": response})
                             except (KeyboardInterrupt, EOFError):
@@ -495,23 +489,23 @@ def run():
                                 break
 
             except Exception as error:
-                print(f"[red]Error: {error}[/]")
+                print(f"エラー: {error}")
 
 
 def main():
-    # Install Rich traceback handler.
+    # Richトレースバックハンドラをインストールします。
     install()
 
     try:
         run()
     except BaseException as error:
-        # Transformers appears to handle KeyboardInterrupt (or BaseException)
-        # internally in some places, which can re-raise a different error in the handler,
-        # masking the root cause. We therefore check both the error itself and its context.
+        # Transformersは、KeyboardInterrupt（またはBaseException）を内部で処理することがあるようです。
+        # これにより、ハンドラで別のエラーが再発生し、根本原因がマスクされる可能性があります。
+        # したがって、エラー自体とそのコンテキストの両方をチェックします。
         if isinstance(error, KeyboardInterrupt) or isinstance(
             error.__context__, KeyboardInterrupt
         ):
             print()
-            print("[red]Shutting down...[/]")
+            print("[red]シャットダウンしています...[/]")
         else:
             raise
