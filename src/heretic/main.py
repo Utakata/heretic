@@ -79,15 +79,15 @@ def run():
     if torch.cuda.is_available():
         print(f"GPUタイプ: [bold]{torch.cuda.get_device_name()}[/]")
     elif is_xpu_available():
-        print(f"XPU type: [bold]{torch.xpu.get_device_name()}[/]")
+        print(f"XPUタイプ: [bold]{torch.xpu.get_device_name()}[/]")
     elif is_mlu_available():
-        print(f"MLU type: [bold]{torch.mlu.get_device_name()}[/]")
+        print(f"MLUタイプ: [bold]{torch.mlu.get_device_name()}[/]")
     elif is_sdaa_available():
-        print(f"SDAA type: [bold]{torch.sdaa.get_device_name()}[/]")
+        print(f"SDAAタイプ: [bold]{torch.sdaa.get_device_name()}[/]")
     elif is_musa_available():
-        print(f"MUSA type: [bold]{torch.musa.get_device_name()}[/]")
+        print(f"MUSAタイプ: [bold]{torch.musa.get_device_name()}[/]")
     elif is_npu_available():
-        print(f"CANN version: [bold]{torch.version.cann}[/]")
+        print(f"CANNバージョン: [bold]{torch.version.cann}[/]")
     else:
         print(
             "[bold yellow]GPUやその他のアクセラレータが検出されませんでした。処理速度が遅くなります。[/]"
@@ -204,8 +204,8 @@ def run():
         direction_scope = trial.suggest_categorical(
             "direction_scope",
             [
-                "global",
-                "per layer",
+                "グローバル",
+                "レイヤーごと",
             ],
         )
 
@@ -220,7 +220,7 @@ def run():
             0.9 * (len(model.get_layers()) - 1),
         )
 
-        if direction_scope == "per layer":
+        if direction_scope == "レイヤーごと":
             direction_index = None
 
         parameters = {}
